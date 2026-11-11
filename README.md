@@ -69,7 +69,7 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-Unit tests cover color transforms, published CIEDE2000 reference pairs, image-coordinate mapping, pixel/region statistics, matching and interpolation guards, invalid calibration profiles, and exports. Browser tests exercise the production app, image sampling, profile persistence, offline reopening, and responsive layouts. A browser automation result is not equivalent to validation on every physical phone or camera.
+Unit tests cover color transforms, published CIEDE2000 reference pairs, image-coordinate mapping, pixel/region statistics, matching and interpolation guards, invalid calibration profiles, and exports. Browser tests exercise the production app, image sampling, profile persistence, offline reopening, and responsive layouts. A browser automation result is not equivalent to validation on every physical phone or camera. See the [recorded browser validation and its limits](docs/VALIDATION.md).
 
 ## GitHub Pages
 

@@ -1,14 +1,14 @@
-import { defineConfig } from 'vitest/config'
-import react from '@vitejs/plugin-react'
+import { defineConfig } from "vitest/config";
+import react from "@vitejs/plugin-react";
 
 export default defineConfig({
-  base: '/PocketSense/',
+  base: "/PocketSense/",
   plugins: [react()],
-  build: { target: 'es2022' },
-  server: { host: '127.0.0.1' },
-  preview: { host: '127.0.0.1' },
+  build: { target: "es2022" },
+  server: { host: "127.0.0.1" },
+  preview: { host: "127.0.0.1" },
   test: {
-    include: ['src/**/*.test.ts'],
-    environment: 'node',
+    include: ["src/**/*.test.ts"],
+    environment: "node",
   },
-})
+});
