@@ -4,9 +4,20 @@
 
 PocketSense is a browser-local color analysis app with two workspaces: **Color Sense**, for numerical image sampling and representative palettes, and **pH Sense**, for comparing a photographed strip region with a compatible reference color profile. It is designed for an exploratory university demonstration, with transparent scientific limits.
 
+**[中文：从 GitHub 在另一台机器上完整安装和部署](docs/DEPLOYMENT.zh-CN.md)**
+
 ## Run locally
 
 Use Node.js 22.12 or newer and npm.
+
+Clone the complete application branch (the open [PR #1](https://github.com/Neutralizer-0618/PocketSense/pull/1) targets `main`):
+
+```sh
+git clone --branch codex/pocketsense-v1 https://github.com/Neutralizer-0618/PocketSense.git
+cd PocketSense
+```
+
+Once the PR is merged, the ordinary `git clone` command without `--branch` also retrieves the complete application. For this private repository, authenticate with a GitHub account that has repository access. Node version managers supporting `.nvmrc` can use the included Node 22 configuration.
 
 ```sh
 npm ci
@@ -19,6 +30,8 @@ Open the local `/PocketSense/` URL printed by Vite. To test the actual productio
 npm run build
 npm run preview
 ```
+
+The repository contains every source file, bundled asset, dependency lockfile, test fixture, and build/deployment configuration required by these commands. `npm ci` reconstructs platform-specific dependencies in `node_modules/`, and `npm run build` produces `dist/`. Neither generated folder needs to be copied from another computer. No app-specific credentials, backend, or environment file is required. The initial dependency installation needs registry access.
 
 The offline worker is enabled in production only. A service worker requires HTTPS or a browser-trusted localhost origin; opening `dist/index.html` directly is insufficient.
 

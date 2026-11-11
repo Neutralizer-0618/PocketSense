@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -20,7 +20,7 @@ async function walk(directory) {
 
 // Only application build outputs are precached. Uploaded photos never enter this list.
 const files = (await walk(dist))
-  .filter((file) => !file.endsWith("/sw.js"))
+  .filter((file) => basename(file) !== "sw.js")
   .sort();
 if (!files.some((file) => relative(dist, file) === "index.html")) {
   throw new Error(
