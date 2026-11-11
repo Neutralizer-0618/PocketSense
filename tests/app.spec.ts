@@ -219,7 +219,7 @@ test("custom profile saves locally, survives reload, exports, and imports", asyn
       selected: true,
     }),
   ).toBeAttached();
-  await expect(page.getByTestId("ph-estimate")).toHaveText("7.0");
+  await expect(page.getByTestId("ph-estimate")).toHaveText("7.00");
   await page.reload();
   await page
     .getByLabel("Choose your reference", { exact: true })
@@ -293,7 +293,7 @@ test("meter comparison records real input differences and excludes demos from ag
 }) => {
   await page.goto("./#ph");
   await page.getByRole("button", { name: /Load synthetic pH demo/ }).click();
-  await expect(page.getByTestId("ph-estimate")).toHaveText("7.0");
+  await expect(page.getByTestId("ph-estimate")).toHaveText("7.00");
   await page.getByLabel("Laboratory reference pH", { exact: true }).fill("7.2");
   await page
     .getByRole("button", { name: "Add comparison", exact: true })
@@ -339,7 +339,7 @@ test.describe("touchscreen workflow", () => {
       .getByRole("link", { name: "pH Sense", exact: true })
       .tap();
     await page.getByRole("button", { name: /Load synthetic pH demo/ }).tap();
-    await expect(page.getByTestId("ph-estimate")).toHaveText("7.0");
+    await expect(page.getByTestId("ph-estimate")).toHaveText("7.00");
   });
 });
 
@@ -366,7 +366,7 @@ test("changing a sample clears its paired meter value and real-measurement confi
         }),
       ),
     });
-  await expect(page.getByTestId("ph-estimate")).toHaveText("7.0");
+  await expect(page.getByTestId("ph-estimate")).toHaveText("7.00");
   await page.getByLabel("Laboratory reference pH", { exact: true }).fill("7.1");
   const confirmation = page.getByRole("checkbox", {
     name: /This is a real strip and paired meter measurement/,
@@ -386,4 +386,43 @@ test("changing a sample clears its paired meter value and real-measurement confi
   await expect(
     page.getByRole("button", { name: "Add comparison", exact: true }),
   ).toBeDisabled();
+});
+
+
+test("reference chart upload samples independent colors, saves associations and reads two decimal pH", async ({ page }) => {
+  await page.goto("./#ph");
+  await upload(page, neutral);
+  await expect(page.getByTestId("ph-estimate")).toHaveText(/\d+\.\d{2}/);
+  await page.getByRole("button", { name: "Create profile", exact: true }).click();
+  const editor = page.locator(".profile-editor");
+  const chart = page.getByRole("region", { name: "Reference image sampling workspace", exact: true });
+  for (const width of [360, 1440]) {
+    await page.setViewportSize({ width, height: 1000 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+  }
+  await page.getByLabel("Profile name", { exact: true }).fill("Uploaded chart");
+  await page.getByLabel("Upload reference image", { exact: true }).setInputFiles(quadrants);
+  await expect(chart.locator(".iw-canvas")).toBeVisible();
+  await chart.getByRole("button", { name: "Pixel", exact: true }).click();
+  const canvas = chart.locator(".iw-canvas");
+  const box = await canvas.boundingBox();
+  if (!box) throw new Error("Reference canvas missing");
+  for (const [x, ph, hex] of [[0.25, "6", "#FF0000"], [0.75, "8", "#00FF00"]] as const) {
+    await canvas.click({ position: { x: box.width * x, y: box.height * 0.25 } });
+    await expect(page.getByLabel("Reference HEX", { exact: true })).toHaveValue(hex);
+    await page.getByLabel("pH value", { exact: true }).fill(ph);
+    await page.getByRole("button", { name: "Add reference", exact: true }).click();
+  }
+  await expect(editor.getByTestId("reference-rgb")).toContainText("0, 255, 0");
+  // The measurement image and its sampled pixels remain independent of the chart.
+  await expect(page.getByRole("region", { name: "Image sampling workspace", exact: true }).locator(".iw-image-caption")).toContainText("neutral.png");
+  await page.getByRole("button", { name: "Save profile", exact: true }).click();
+  await page.reload();
+  await page.getByLabel("Choose your reference", { exact: true }).selectOption({ label: "Uploaded chart" });
+  await upload(page, quadrants);
+  await selection(page, 0, 0, 20, 20);
+  await expect(page.getByTestId("ph-estimate")).toHaveText("6.00");
+  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem("pocketsense.profiles.v1") || "[]"));
+  expect(stored[0].points).toEqual([{ ph: 6, hex: "#FF0000" }, { ph: 8, hex: "#00FF00" }]);
+  expect(stored[0].synthetic).toBe(false);
 });

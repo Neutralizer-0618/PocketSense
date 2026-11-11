@@ -17,6 +17,7 @@ export interface LoadedImage {
 
 interface Props {
   kind: "color" | "ph";
+  reference?: boolean;
   onImage: (image: LoadedImage | null) => void;
   onSelection: (sample: Sample | null, rect: Rect | null) => void;
 }
@@ -229,7 +230,7 @@ function demoImage(kind: Props["kind"]) {
   return canvas;
 }
 
-export function ImageWorkspace({ kind, onImage, onSelection }: Props) {
+export function ImageWorkspace({ kind, reference = false, onImage, onSelection }: Props) {
   const [loaded, setLoaded] = useState<LoadedImage | null>(null);
   const [selection, setSelection] = useState<Rect | null>(null);
   const [mode, setMode] = useState<Mode>("region");
@@ -551,13 +552,13 @@ export function ImageWorkspace({ kind, onImage, onSelection }: Props) {
       : undefined;
 
   return (
-    <section className="iw-workspace" aria-label="Image sampling workspace">
+    <section className="iw-workspace" aria-label={reference ? "Reference image sampling workspace" : "Image sampling workspace"}>
       <input
         ref={fileRef}
         type="file"
         accept="image/jpeg,image/png,image/webp"
         className="iw-file"
-        aria-label="Upload image"
+        aria-label={reference ? "Upload reference image" : "Upload image"}
         onChange={(event) => {
           void loadFile(event.target.files?.[0]);
           event.target.value = "";
@@ -577,8 +578,8 @@ export function ImageWorkspace({ kind, onImage, onSelection }: Props) {
       />
       <div className="iw-heading">
         <div>
-          <span className="iw-eyebrow">01 / YOUR IMAGE</span>
-          <h2>{loaded ? "A closer look." : "Start with a photograph."}</h2>
+          <span className="iw-eyebrow">{reference ? "REFERENCE CHART" : "01 / YOUR IMAGE"}</span>
+          <h2>{reference ? "Sample your reference chart." : loaded ? "A closer look." : "Start with a photograph."}</h2>
         </div>
         <span className="iw-local">
           <span /> On-device

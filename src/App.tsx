@@ -622,6 +622,7 @@ function ProfileEditor({
   const [hex, setHex] = useState("#95B975");
   const [points, setPoints] = useState<ReferenceProfile["points"]>([]);
   const [error, setError] = useState("");
+  const referenceSynthetic = useRef(false);
   function add() {
     const value = Number(ph);
     if (
@@ -675,9 +676,23 @@ function ProfileEditor({
         </button>
       </div>
       <p className="muted">
-        Use known values for your strip chemistry. Select a chart patch in the
-        photo, then use its sampled color.
+        Upload your reference chart below. Click or select each color patch,
+        enter its printed pH value, then add the reference. Save at least two
+        references to reuse this chart. pH labels are entered manually.
       </p>
+      <div className="reference-image-editor">
+        <ImageWorkspace
+          kind="ph"
+          reference
+          onImage={(next) => { referenceSynthetic.current = !!next?.synthetic; }}
+          onSelection={(next) => {
+            if (next) {
+              setHex(rgbToHex(next.median));
+              setPendingSynthetic(referenceSynthetic.current);
+            }
+          }}
+        />
+      </div>
       <label className="field">
         Profile name
         <input
@@ -694,7 +709,7 @@ function ProfileEditor({
             type="number"
             min="0"
             max="14"
-            step="0.1"
+            step="0.01"
             value={ph}
             onChange={(e) => setPh(e.target.value)}
           />
@@ -712,6 +727,11 @@ function ProfileEditor({
           />
         </label>
       </div>
+      {hexToRgb(hex) && (
+        <p className="muted" data-testid="reference-rgb">
+          Reference RGB: {formatRgb(hexToRgb(hex)!)}
+        </p>
+      )}
       <div className="button-row">
         <button
           className="button subtle compact"
@@ -987,7 +1007,7 @@ function PhResults({
                   : "ESTIMATED pH"}
               </span>
               <strong data-testid="ph-estimate">
-                {result.estimate === null ? "—" : result.estimate.toFixed(1)}
+                {result.estimate === null ? "—" : result.estimate.toFixed(2)}
               </strong>
               <p>
                 {result.range
@@ -1025,13 +1045,13 @@ function PhResults({
             <dl className="color-values">
               <div>
                 <dt>Color difference</dt>
-                <dd>ΔE₀₀ {result.deltaE.toFixed(2)}</dd>
+                <dd>ΔEab {result.deltaE.toFixed(2)}</dd>
               </div>
               <div>
                 <dt>Method</dt>
                 <dd>
                   {result.interpolated
-                    ? "Local Lab interpolation"
+                    ? "Lab Catmull-Rom · 0.01 pH"
                     : result.estimate !== null
                       ? "Nearest reference"
                       : "Match rejected"}

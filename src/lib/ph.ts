@@ -1,5 +1,4 @@
 import {
-  deltaE2000,
   hexToRgb,
   rgbToHex,
   rgbToLab,
@@ -95,176 +94,79 @@ export function parseProfile(json: string): ReferenceProfile {
   };
 }
 
-function projection(sample: Lab, start: Lab, end: Lab) {
-  const d = { l: end.l - start.l, a: end.a - start.a, b: end.b - start.b };
-  const length2 = d.l ** 2 + d.a ** 2 + d.b ** 2;
-  const t = length2
-    ? ((sample.l - start.l) * d.l +
-        (sample.a - start.a) * d.a +
-        (sample.b - start.b) * d.b) /
-      length2
-    : 0;
-  const projected = {
-    l: start.l + t * d.l,
-    a: start.a + t * d.a,
-    b: start.b + t * d.b,
-  };
-  const residual = Math.hypot(
-    sample.l - projected.l,
-    sample.a - projected.a,
-    sample.b - projected.b,
-  );
+/** Uniform Catmull-Rom in D65 Lab; repeat end controls at profile boundaries. */
+export function catmullRomLab(p0: Lab, p1: Lab, p2: Lab, p3: Lab, t: number): Lab {
+  const interpolate = (a: number, b: number, c: number, d: number) =>
+    0.5 * (2 * b + (-a + c) * t +
+      (2 * a - 5 * b + 4 * c - d) * t * t +
+      (-a + 3 * b - 3 * c + d) * t * t * t);
   return {
-    t,
-    projected,
-    residualRatio: length2 ? residual / Math.sqrt(length2) : Infinity,
+    l: interpolate(p0.l, p1.l, p2.l, p3.l),
+    a: interpolate(p0.a, p1.a, p2.a, p3.a),
+    b: interpolate(p0.b, p1.b, p2.b, p3.b),
   };
 }
 
-/** Reference-guided exploratory estimate. All thresholds are transparent heuristics, not validation. */
+const distance2 = (a: Lab, b: Lab) =>
+  (a.l - b.l) ** 2 + (a.a - b.a) ** 2 + (a.b - b.b) ** 2;
+
+/** Search the Lab spline at 0.01 pH spacing, including every reference knot. */
 export function estimatePh(rgb: RGB, profile: ReferenceProfile): PhResult {
   const errors = validateProfile(profile);
   if (errors.length) throw new Error(errors.join(" "));
   const sample = rgbToLab(rgb);
-  const points = [...profile.points]
-    .sort((a, b) => a.ph - b.ph)
-    .map((point) => ({ ...point, lab: rgbToLab(hexToRgb(point.hex)!) }));
-  const matches = points
-    .map((point, index) => ({
-      point,
-      index,
-      deltaE: deltaE2000(sample, point.lab),
-    }))
-    .sort((a, b) => a.deltaE - b.deltaE);
-  const best = matches[0],
-    runnerUp = matches[1];
+  const points = [...profile.points].sort((a, b) => a.ph - b.ph)
+    .map(point => ({ ...point, lab: rgbToLab(hexToRgb(point.hex)!) }));
+  let nearest = points[0];
+  let nearestDistance = Infinity;
+  for (const point of points) {
+    const distance = distance2(sample, point.lab);
+    if (distance < nearestDistance) {
+      nearest = point;
+      nearestDistance = distance;
+    }
+  }
+  let bestDistance = Infinity;
+  let estimate = points[0].ph;
+  let range: [number, number] = [points[0].ph, points[1].ph];
+  for (let i = 0; i < points.length - 1; i++) {
+    const left = points[i], right = points[i + 1];
+    const consider = (ph: number) => {
+      const lab = catmullRomLab(
+        points[Math.max(0, i - 1)].lab, left.lab, right.lab,
+        points[Math.min(points.length - 1, i + 2)].lab,
+        (ph - left.ph) / (right.ph - left.ph),
+      );
+      const distance = distance2(sample, lab);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        estimate = ph;
+        range = [left.ph, right.ph];
+      }
+    };
+    consider(left.ph);
+    for (let tick = Math.floor(left.ph * 100) + 1; tick < right.ph * 100; tick++)
+      consider(tick / 100);
+    consider(right.ph);
+  }
+  const interpolated = !points.some(point => Math.abs(point.ph - estimate) < 1e-9);
   const warnings = [
-    "No analytical accuracy has been established for this profile. The range shows reference resolution, not a confidence interval.",
+    "Catmull-Rom Lab nearest-point estimate at 0.01 pH spacing. Decimal places do not imply validated pH precision.",
   ];
   if (profile.synthetic)
-    warnings.unshift(
-      "Synthetic demonstration only. These colors are not a validated pH strip calibration.",
-    );
-  const result: PhResult = {
-    estimate: best.point.ph,
-    range: [
-      points[Math.max(0, best.index - 1)].ph,
-      points[Math.min(points.length - 1, best.index + 1)].ph,
-    ],
-    nearest: { ph: best.point.ph, hex: best.point.hex },
-    deltaE: best.deltaE,
-    interpolated: false,
-    warnings,
-    status: "matched",
+    warnings.unshift("Synthetic demonstration only. These colors are not a validated pH strip calibration.");
+  if (estimate === points[0].ph || estimate === points.at(-1)!.ph)
+    warnings.push("The closest match is a range endpoint. No extrapolation beyond the reference range is performed.");
+  if (Math.sqrt(bestDistance) > 15)
+    warnings.push("The sample is far from the reference curve. Check that the selected reference profile is compatible.");
+  if (points.some((point, i) => points.some((other, j) => j > i && distance2(point.lab, other.lab) < 1e-12)))
+    warnings.push("Repeated reference colors cannot uniquely distinguish pH; equal-distance ties use the first point in ascending pH order.");
+  return {
+    estimate: Number(estimate.toFixed(2)), range,
+    nearest: { ph: nearest.ph, hex: nearest.hex },
+    deltaE: Math.sqrt(nearestDistance), interpolated, warnings,
+    status: interpolated ? "interpolated" : "matched",
   };
-  // A visually unrelated sample must not produce a confident-looking numeric estimate.
-  if (best.deltaE > 15) {
-    return {
-      ...result,
-      estimate: null,
-      range: null,
-      status: "unsupported",
-      warnings: [
-        ...warnings,
-        "Poor color match (ΔE00 > 15). Check the strip/profile compatibility, lighting and selected region.",
-      ],
-    };
-  }
-  // Repeated colors or similarly close non-neighboring references cannot distinguish pH.
-  const competing = matches.filter((m) => m.deltaE - best.deltaE < 2);
-  const conflicting = competing.some(
-    (m) =>
-      m.index !== best.index &&
-      (Math.abs(m.index - best.index) > 1 ||
-        deltaE2000(m.point.lab, best.point.lab) < 2),
-  );
-  if (conflicting || competing.length > 2) {
-    const possibleValues = competing.map((m) => m.point.ph);
-    return {
-      ...result,
-      estimate: null,
-      range: [Math.min(...possibleValues), Math.max(...possibleValues)],
-      status: "ambiguous",
-      warnings: [
-        ...warnings,
-        "Ambiguous reference colors: this sample cannot distinguish the competing pH values.",
-      ],
-    };
-  }
-  if (best.deltaE < 0.001) {
-    if (best.index === 0 || best.index === points.length - 1)
-      warnings.push(
-        "The closest match is a range endpoint. Values beyond the calibrated range cannot be determined.",
-      );
-    return result;
-  }
-  const lower = Math.min(best.index, runnerUp.index),
-    upper = Math.max(best.index, runnerUp.index);
-  const left = points[lower],
-    right = points[upper];
-  const segment = projection(sample, left.lab, right.lab);
-  const separation = deltaE2000(left.lab, right.lab);
-  if (
-    upper - lower === 1 &&
-    right.ph - left.ph <= 2 &&
-    separation >= 3 &&
-    separation <= 30 &&
-    best.deltaE <= 12 &&
-    segment.t > 0.02 &&
-    segment.t < 0.98 &&
-    segment.residualRatio <= 0.25 &&
-    deltaE2000(sample, segment.projected) <= 3
-  ) {
-    return {
-      ...result,
-      estimate: left.ph + segment.t * (right.ph - left.ph),
-      range: [left.ph, right.ph],
-      interpolated: true,
-      status: "interpolated",
-      warnings: [
-        ...warnings,
-        "Local Lab interpolation is a numerical approximation. Decimal places do not imply validated pH precision.",
-      ],
-    };
-  }
-  if (best.index === 0 || best.index === points.length - 1) {
-    const endpointStart =
-      best.index === 0 ? points[0] : points[points.length - 2];
-    const endpointEnd =
-      best.index === 0 ? points[1] : points[points.length - 1];
-    const endpointProjection = projection(
-      sample,
-      endpointStart.lab,
-      endpointEnd.lab,
-    );
-    if (
-      best.deltaE > 2 &&
-      ((best.index === 0 && endpointProjection.t < 0) ||
-        (best.index === points.length - 1 && endpointProjection.t > 1))
-    ) {
-      return {
-        ...result,
-        estimate: null,
-        range: null,
-        status: "unsupported",
-        warnings: [
-          ...warnings,
-          "Color extends beyond the endpoint reference. No extrapolation is supported.",
-        ],
-      };
-    }
-    warnings.push(
-      "The closest match is a range endpoint. Values beyond the calibrated range cannot be determined.",
-    );
-  }
-  warnings.push(
-    "Nearest reference reported; conditions for local interpolation were not met.",
-  );
-  if (best.deltaE > 6)
-    warnings.push(
-      "Noticeable reference mismatch: repeat the photograph and check lighting and strip compatibility.",
-    );
-  return result;
 }
 
 export function comparisonMetrics(rows: ComparisonRow[]): {
